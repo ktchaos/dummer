@@ -2,7 +2,7 @@ import XCTest
 @testable import Dummer
 
 // MARK: Tests
-final class DummerTests: XCTestCase {
+final class RemoteFeedLoaderTests: XCTestCase {
     func test_init_doesNotRequestDataFromURL() {
         let (_, client) = makeSUT()
 
