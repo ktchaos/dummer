@@ -91,6 +91,21 @@ final class RemoteFeedLoaderTests: XCTestCase {
         })
     }
     
+    func test_load_doesNotDeliverResultAfterSUTInstanceHasBeenDeallocated() {
+        let url = URL(string: "https://kajsdkjdhsf.com")!
+        let client = HTTPClientSpy()
+        
+        var sut: RemoteFeedLoader? = RemoteFeedLoader(url: url, client: client)
+        
+        var capturedResults = [Result<[DummerFeedItem], RemoteFeedLoader.Error>]()
+        sut?.load { capturedResults.append($0) }
+        
+        sut = nil
+        client.complete(withStatusCode: 200, data: makeItemsJSON([]))
+        
+        XCTAssert(capturedResults.isEmpty)
+    }
+    
     
     // MARK: - Helpers
     private func expect(
@@ -110,11 +125,23 @@ final class RemoteFeedLoaderTests: XCTestCase {
     
     // MARK: - SUT
     private func makeSUT(
-        url: URL = URL(filePath: "https://blablabla.com")
+        url: URL = URL(filePath: "https://blablabla.com"),
+        file: StaticString = #filePath,
+        line: UInt = #line
     ) -> (RemoteFeedLoader, HTTPClientSpy) {
         let client = HTTPClientSpy()
         let sut = RemoteFeedLoader(url: url, client: client)
+        
+        trackForMemoryLeaks(sut, file: file, line: line)
+        trackForMemoryLeaks(client, file: file, line: line)
+        
         return (sut, client)
+    }
+    
+    private func trackForMemoryLeaks(_ instance: AnyObject, file: StaticString = #file, line: UInt = #line) {
+        addTeardownBlock { [weak instance] in
+            XCTAssertNil(instance, "Instance should have been deallocated. Potencial memory leak.", file: file, line: line)
+        }
     }
     
     private func makeItem(id: UUID, description: String? = nil, location: String? = nil, imageUrl: URL) -> (model: DummerFeedItem, json: [String: Any]) {
@@ -189,3 +216,9 @@ final class RemoteFeedLoaderTests: XCTestCase {
 // 1. expected functions can be powerful
 // 2. optionals -> exponential results
 // 3. CodingKeys should be part of the FeedLoader, it's part of the RemoteFeedLoader module
+
+// Notes on Lesson #5
+// 1. Be careful when creating completion blocks that may live without the instance that holds it
+// 2. Think about all the edge cases
+//3. Always cover async code blocks
+
