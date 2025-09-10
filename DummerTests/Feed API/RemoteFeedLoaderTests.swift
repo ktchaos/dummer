@@ -33,7 +33,7 @@ final class RemoteFeedLoaderTests: XCTestCase {
     func test_load_deliversErrorOnClientError() {
         let (sut, client) = makeSUT()
         
-        expect(sut, toCompleteWithResult: .failure(.connectivity), when: {
+        expect(sut, toCompleteWithResult: failure(.connectivity), when: {
             client.complete(with: .connectivity)
         })
     }
@@ -43,7 +43,7 @@ final class RemoteFeedLoaderTests: XCTestCase {
         let samples = [199, 201, 300, 400, 500]
         
         samples.enumerated().forEach { index, code in
-            expect(sut, toCompleteWithResult: .failure(.invalidData), when: {
+            expect(sut, toCompleteWithResult: failure(.invalidData), when: {
                 let json = makeItemsJSON([])
                 client.complete(withStatusCode: code, data: json, at: index)
             })
@@ -53,7 +53,7 @@ final class RemoteFeedLoaderTests: XCTestCase {
     func test_load_deliversErrorOn200HTTPResponseWithInvalidJSON() {
         let (sut, client) = makeSUT()
         
-        expect(sut, toCompleteWithResult: .failure(.invalidData), when: {
+        expect(sut, toCompleteWithResult: failure(.invalidData), when: {
             let invalidJSON = Data("invalid json".utf8)
             client.complete(withStatusCode: 200, data: invalidJSON)
         })
@@ -97,7 +97,7 @@ final class RemoteFeedLoaderTests: XCTestCase {
         
         var sut: RemoteFeedLoader? = RemoteFeedLoader(url: url, client: client)
         
-        var capturedResults = [Result<[DummerFeedItem], RemoteFeedLoader.Error>]()
+        var capturedResults = [LoadFeedResult]()
         sut?.load { capturedResults.append($0) }
         
         sut = nil
@@ -110,17 +110,30 @@ final class RemoteFeedLoaderTests: XCTestCase {
     // MARK: - Helpers
     private func expect(
         _ sut: RemoteFeedLoader,
-        toCompleteWithResult result: Result<[DummerFeedItem], RemoteFeedLoader.Error>,
+        toCompleteWithResult expectedResult: LoadFeedResult,
         when action: () -> Void,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        var capturedResults = [Result<[DummerFeedItem], RemoteFeedLoader.Error>]()
-        sut.load { capturedResults.append($0) }
+        let exp = expectation(description: "Wait for load completion")
         
+        sut.load { receivedResult in
+            switch (receivedResult, expectedResult) {
+            case let (.success(receivedItems), .success(expectedItems)):
+                XCTAssertEqual(receivedItems, expectedItems, file: file, line: line)
+                
+            case let (.failure(receivedError as RemoteFeedLoader.RemoteFeedLoaderError), .failure(expectedError as RemoteFeedLoader.RemoteFeedLoaderError)):
+                XCTAssertEqual(receivedError, expectedError, file: file, line: line)
+                
+            default:
+                XCTFail("expected \(expectedResult) got \(receivedResult) instead", file: file, line: line)
+            }
+        }
+
+        exp.fulfill()
         action()
         
-        XCTAssertEqual(capturedResults, [result], file: file, line: line)
+        wait(for: [exp], timeout: 1.0)
     }
     
     // MARK: - SUT
@@ -142,6 +155,10 @@ final class RemoteFeedLoaderTests: XCTestCase {
         addTeardownBlock { [weak instance] in
             XCTAssertNil(instance, "Instance should have been deallocated. Potencial memory leak.", file: file, line: line)
         }
+    }
+    
+    private func failure(_ error: RemoteFeedLoader.RemoteFeedLoaderError) -> RemoteFeedLoader.Result {
+        return .failure(error)
     }
     
     private func makeItem(id: UUID, description: String? = nil, location: String? = nil, imageUrl: URL) -> (model: DummerFeedItem, json: [String: Any]) {
@@ -175,17 +192,17 @@ final class RemoteFeedLoaderTests: XCTestCase {
         }
         
         private var messages = [
-            (url: URL, completion: (Result<ClientResponse, RemoteFeedLoader.Error>) -> Void)
+            (url: URL, completion: (Result<ClientResponse, Error>) -> Void)
         ]()
         
         func get(
             from url: URL,
-            completion: @escaping (Result<ClientResponse, RemoteFeedLoader.Error>) -> Void
+            completion: @escaping (Result<ClientResponse, Error>) -> Void
         ) {
             messages.append((url: url, completion: completion))
         }
         
-        func complete(with error: RemoteFeedLoader.Error, at index: Int = 0) {
+        func complete(with error: RemoteFeedLoader.RemoteFeedLoaderError, at index: Int = 0) {
             messages[index].completion(.failure(error))
         }
         
@@ -222,3 +239,6 @@ final class RemoteFeedLoaderTests: XCTestCase {
 // 2. Think about all the edge cases
 //3. Always cover async code blocks
 
+// Notes on Lesson #6
+// 1. What we want to do here is hide the RemoteFeedLoader Error from the API side
+// 2. Use expectations on tests when using async methods

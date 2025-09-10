@@ -13,6 +13,6 @@ public struct ClientResponse {
 public protocol HTTPClient {
     func get(
         from url: URL,
-        completion: @escaping (Result<ClientResponse, RemoteFeedLoader.Error>) -> Void
+        completion: @escaping (Result<ClientResponse, Error>) -> Void
     )
 }

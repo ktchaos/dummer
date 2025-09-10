@@ -1,24 +1,22 @@
 import Foundation
 
-protocol FeedLoader {
-    func load(completion: @escaping (Result<[DummerFeedItem], Error>) -> Void)
-}
-
-public final class RemoteFeedLoader {
+public final class RemoteFeedLoader: FeedLoader {
     private let url: URL
     private let client: HTTPClient
     
-    public enum Error: Swift.Error {
+    public enum RemoteFeedLoaderError: Swift.Error {
         case connectivity
         case invalidData
     }
+    
+    public typealias Result = LoadFeedResult
     
     public init(url: URL, client: HTTPClient) {
         self.client = client
         self.url = url
     }
     
-    public func load(completion: @escaping (Result<[DummerFeedItem], Error>) -> Void) {
+    public func load(completion: @escaping (Result) -> Void) {
         client.get(from: url) { [weak self] result in
             guard self != nil else { return }
             
@@ -26,7 +24,7 @@ public final class RemoteFeedLoader {
             case .success(let response):
                 completion(FeedItemsMapper.map(response.data, from: response.response))
             case .failure:
-                completion(.failure(.connectivity))
+                completion(.failure(RemoteFeedLoaderError.connectivity))
             }
         }
     }
